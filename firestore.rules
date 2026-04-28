@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * CORE PHILOSOPHY:
+     * This ruleset implements an "Authorization Independence" model for the Academia Insights platform. 
+     * Security is enforced primarily through denormalization: authorization contexts (like teacher UID maps) 
+     * are copied directly onto documents (Courses, Enrollments, Grades, etc.) to allow for fast, 
+     * single-document lookups without expensive join-like operations.
+     */
+
+    // --- Helper Functions ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+
+    // --- Rules ---
+
+    /**
+     * @description Controls access to user profile information.
+     */
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isSignedIn() && isOwner(userId);
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+
+    /**
+     * @description Private settings subcollection for users.
+     */
+    match /users/{userId}/settings/{settingId} {
+      allow get, list, create, update, delete: if isSignedIn() && isOwner(userId);
+    }
+
+    /**
+     * @description Static role definitions.
+     */
+    match /roles/{roleId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if false;
+    }
+
+    /**
+     * @description Marker collections for RBAC.
+     */
+    match /roles_admin/{userId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /roles_teacher/{userId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    /**
+     * @description Academic and Collaborative Entities.
+     * During prototype phase, all authenticated users can manage these records.
+     */
+    match /academic_periods/{academicPeriodId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /courses/{courseId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /assignments/{assignmentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /grades/{gradeId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /attendance_records/{attendanceRecordId} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}
